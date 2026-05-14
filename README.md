@@ -1,20 +1,70 @@
 
-# Домашнее задание к занятию  «Кеширование Redis/memcached» - Бобков Александр
+# Домашнее задание к занятию  «ELK» - Бобков Александр
 <details>
-<summary><b>Задание 1. Кеширование</b></summary>
+<summary><b>Задание 1. Elasticsearch</b></summary>
 
-- Приведите примеры проблем, которые может решить кеширование. 
+- Установите и запустите Elasticsearch, после чего поменяйте параметр cluster_name на случайный. 
 
-*Приведите ответ в свободной форме.*
+*Приведите скриншот команды 'curl -X GET 'localhost:9200/_cluster/health?pretty', сделанной на сервере с установленным Elasticsearch. Где будет виден нестандартный cluster_name*.
 
 ### ОТВЕТ:
 
-**Кеширование помогает решить следующие проблемы производительности и архитектуры:**
-- Высокая задержка (Latency): Ускоряет отдачу данных за счет их хранения в оперативной памяти.
-- Высокая нагрузка на БД: Защищает основную базу данных от повторных тяжелых запросов.
-- Экономия сетевого трафика: Снижает объемы данных, передаваемых между серверами.
-- Повторные сложные вычисления: Исключает затраты процессора на генерацию неизменяемых данных.
-- Отказоустойчивость: Позволяет отдавать пользователям сохраненную копию данных при сбое источника.
+**Установка и запуск (с использованием зеркала Yandex Cloud):**
+```bash
+# 1. Подключение доверенного зеркала Яндекса 
+echo "deb [trusted=yes] yandex.ru stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
+
+# 2. Обновление списков пакетов и установка Elasticsearch
+sudo apt update && sudo apt install elasticsearch -y
+
+# 3. Настройка имени кластера в /etc/elasticsearch/elasticsearch.yml
+# Изменена директива: cluster.name: my-dz
+
+# 4. Запуск службы
+sudo systemctl daemon-reload
+sudo systemctl enable elasticsearch
+sudo systemctl start elasticsearch
+```
+
+**Сброс и генерация пароля администратора (X-Pack Security):**
+Поскольку в версии 8.x пароль генерируется автоматически при первой установке пакета, для явного назначения учетных данных пользователя `elastic` выполнена процедура принудительного сброса через встроенную CLI-утилиту:
+```bash
+/usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic -a
+```
+*Результат выполнения:* Сгенерирован новый постоянный токен доступа.
+
+**Проверка состояния кластера:**
+Диагностический запрос отправлен через утилиту `curl` по защищенному протоколу HTTPS с флагом `-k` (игнорирование самоподписанного сертификата) и передачей актуальных учетных данных:
+```bash
+curl -k -u elastic:Kz4ym_Xoj8OhHhQv-Hxr -X GET 'https://localhost:9200/_cluster/health?pretty'
+```
+
+**Результат выполнения команды в терминале:**
+```json
+{
+  "cluster_name" : "my-dz",
+  "status" : "green",
+  "timed_out" : false,
+  "number_of_nodes" : 1,
+  "number_of_data_nodes" : 1,
+  "active_primary_shards" : 3,
+  "active_shards" : 3,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 0,
+  "unassigned_primary_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 100.0
+}
+```
+
+**Скриншот вывода команды curl с уникальным cluster_name и статусом green:**
+![Здоровье кластера Elasticsearch](./img/1.jpg)
+
+
 </details>
 
 ------
