@@ -218,39 +218,56 @@ for i in {1..10}; do curl -I http://localhost/; sleep 0.5; done
 
 
 <details>
-<summary><b>Задание 4. Запись данных в Redis</b></summary>
+<summary><b>Задание 4. Filebeat.</b></summary>
+
+- Установите и запустите Filebeat. Переключите поставку логов Nginx с Logstash на Filebeat. 
+
+*Приведите скриншот интерфейса Kibana, на котором видны логи Nginx, которые были отправлены через Filebeat.*
 
 ### ОТВЕТ:
 
-**Установка и запуск Redis-сервера:**
+**1. Отключение предыдущего конвейера и установка Filebeat:**
 ```bash
-sudo apt update && sudo apt install redis-server -y
-sudo systemctl start redis-server
-sudo systemctl enable redis-server
-sudo systemctl status redis-server
+sudo systemctl stop logstash
+sudo apt update && sudo apt install filebeat -y
 ```
 
-После успешного запуска выполнена множественная запись тестовых ключей через команду `MSET` и их последующее извлечение из базы с помощью интерфейса командной строки `redis-cli`:
+**2. Конфигурация защищенного агента доставки:**
+Вся конфигурация сбора и прямой отправки данных настроена в файле `/etc/filebeat/filebeat.yml`. Для обхода проблем парсинга YAML-отступов на стороне агента, авторизация интегрирована методом HTTP Basic Auth напрямую в строку адреса хоста:
 
-```text
-$ redis-cli
+```yaml
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/nginx/access.log
 
-127.0.0.1:6379> MSET user:1 "Alex" user:2 "Ivan" user:3 "Olga"
-OK
+output.elasticsearch:
+  hosts: ["https://elastic:Kz4ym_Xoj8OhHhQv-Hxr@localhost:9200"]
+  ssl.verification_mode: "none"
+  index: "filebeat-nginx-%{[agent.version]}-%{+yyyy.MM.dd}"
 
-127.0.0.1:6379> KEYS *
-1) "user:2"
-2) "user:3"
-3) "user:1"
-
-127.0.0.1:6379> MGET user:1 user:2 user:3
-1) "Alex"
-2) "Ivan"
-3) "Olga"
+setup.template.name: "filebeat"
+setup.template.pattern: "filebeat-*"
+setup.ilm.enabled: false
 ```
 
-**Скриншот операций записи и чтения в Redis:**
-![Операции в Redis CLI](./img/3.jpg)
+**3. Запуск агента и генерация новых событий:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable filebeat
+sudo systemctl start filebeat
+
+# Искусственная генерация свежих логов для проверки доставки через Filebeat
+for i in {1..5}; do curl -I http://localhost/; done
+```
+
+Регистрация данных в Elasticsearch успешно подтверждена диагностической командой проверки выходного сетевого буфера `filebeat test output` со статусом `talk to server... OK`.
+
+**Скриншот интерфейса Kibana с логами Nginx от Filebeat:**
+![Логи Nginx через Filebeat](./img/4.jpg)
+
+
 
 
 </details>
