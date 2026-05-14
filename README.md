@@ -72,26 +72,47 @@ curl -k -u elastic:Kz4ym_Xoj8OhHhQv-Hxr -X GET 'https://localhost:9200/_cluster/
 
 
 <details>
-<summary><b>Задание 2. Memcached</b></summary>
+<summary><b>Задание 2. Kibana</b></summary>
 
-- Установите и запустите memcached.
+- Установите и запустите Kibana.
 
-*Приведите скриншот systemctl status memcached, где будет видно, что memcached запущен.*
-
+*Приведите скриншот интерфейса Kibana на странице http://<ip вашего сервера>:5601/app/dev_tools#/console, где будет выполнен запрос GET /_cluster/health?pretty*.
 ------
 
 ### ОТВЕТ:
-Установка и запуск сервиса в Debian выполнены с помощью команд:
-
+**Установка и запуск:**
 ```bash
-sudo apt update && sudo apt install memcached -y
-sudo systemctl start memcached
-sudo systemctl enable memcached
-sudo systemctl status memcached
+sudo apt update && sudo apt install kibana -y
 ```
-**Скриншот статуса службы memcached:**
-![Статус Memcached](./img/1.jpg)
 
+**Обеспечение сетевой доступности:**
+Для предоставления внешнего доступа к веб-интерфейсу с хост-машины в файле конфигурации `/etc/kibana/kibana.yml` адрес прослушивания был изменен с `localhost` на все доступные интерфейсы:
+```yaml
+server.host: "0.0.0.0"
+```
+
+Перезапуск и добавление службы в автозагрузку:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable kibana
+sudo systemctl start kibana
+```
+
+**Первоначальная интерактивная настройка (Interactive Setup):**
+При первом запуске служба перешла в режим ожидания конфигурации (`interactiveSetup holding setup`). Безопасное связывание выполнено по следующему алгоритму:
+1. Выполнен переход в браузере по адресу `http://<IP_сервера>:5601`.
+2. В поле проверки введен шестизначный код верификации, полученный из системного лога (`journalctl -u kibana`): `283236`.
+3. На сервере Elasticsearch сгенерирован одноразовый токен регистрации для автоматического обмена SSL-сертификатами:
+   ```bash
+   /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s kibana
+   ```
+4. Полученный токен вставлен в веб-интерфейс Kibana.
+5. Финальная авторизация в системе пройдена под суперпользователем `elastic` с использованием пароля `Kz4ym_Xoj8OhHhQv-Hxr`.
+
+Диагностический запрос `GET /_cluster/health?pretty` выполнен во встроенной интерактивной консоли разработчика Dev Tools.
+
+**Скриншот интерфейса Kibana (страница Dev Tools Console):**
+![Запрос в консоли Kibana](./img/2.jpg)
 
 
 
