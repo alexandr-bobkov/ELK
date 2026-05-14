@@ -277,33 +277,142 @@ for i in {1..5}; do curl -I http://localhost/; done
 
 
 <details>
-<summary><b>Задание 5*. Работа с числами</b></summary>
+<summary><b>Задание 5*. Доставка данных</b></summary>
 
-- Запишите в Redis ключ key5 со значением типа "int" равным числу 5. Увеличьте его на 5, чтобы в итоге в значении лежало число 10.  
+- Настройте поставку лога в Elasticsearch через Logstash и Filebeat любого другого сервиса , но не Nginx. 
+- Для этого лог должен писаться на файловую систему, Logstash должен корректно его распарсить и разложить на поля. 
 
-*Приведите скриншот, где будут проделаны все операции и будет видно, что значение key5 стало равно 10.*
+*Приведите скриншот интерфейса Kibana, на котором будет виден этот лог и напишите лог какого приложения отправляется.*
+
 
 ### ОТВЕТ:
  
-- Решение задачи атомарного изменения целочисленного значения счетчика с 5 до 10:
+---
+
+### Задание 5*. Доставка данных (Дополнительное)
+
+**Особенность работы на Debian 13:**
+
+Чтобы собрать эти логи, необходимо настроить следующую цепочку:
+1. **Filebeat** заглядывает в  системный журнал, забирает оттуда логи безопасности и пересылает их в Logstash.
+2. **Logstash** принимает этот текст, режет его на понятные части (дата, имя программы, текст ошибки) и отправляет в базу Elasticsearch.
+3. **Elasticsearch** сохраняет эти данные в специальную папку (индекс) `auth-secure-logs-*`.
+4. **Kibana** показывает все.
+
+---
+
+#### 1. Настройка Filebeat (`/etc/filebeat/filebeat.yml`)
+
+Очистили файл конфигурации и указали Filebeat собирать логи Nginx (из прошлого задания) и системные логи авторизации (через модуль `journald`). Всё это отправляется на порт `5044`, где его ждет Logstash.
+
+```yaml
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/nginx/access.log
+  tags: ["nginx"]
+
+- type: journald
+  enabled: true
+  id: os-security-journal
+  # Собираем логи только от программ, отвечающих за вход в систему (ssh, su, sudo)
+  include_units:
+    - ssh
+    - sshd
+    - su
+    - sudo
+    - systemd-logind
+  tags: ["system-auth"]
+
+# Отправляем все собранные данные в Logstash
+output.logstash:
+  hosts: ["localhost:5044"]
+```
+
+---
+
+#### 2. Настройка Logstash (`/etc/logstash/conf.d/nginx.conf`)
+
+Logstash настроен так, чтобы он слушал порт `5044`, принимал логи от Filebeat и раскладывал их по разным папкам в Elasticsearch, используя наш пароль `Kz4ym_Xoj8OhHhQv-Hxr`.
 
 ```text
+input {
+  beats {
+    port => 5044
+  }
+}
 
-$ redis-cli
-# Запись ключа со значением 5
-127.0.0.1:6379> SET key5 5
-OK
+filter {
+  # Если это логи от Nginx — разбираем их как логи сайта
+  if "nginx" in [tags] {
+    grok {
+      match => { "message" => "%{COMBINEDAPACHELOG}" }
+    }
+  }
+  
+  # Если это логи системы — разбиваем их на дату, имя программы и текст ошибки
+  if "system-auth" in [tags] {
+    grok {
+      match => { "message" => "%{POSTFIX_QUEUEID:syslog_timestamp}? %{HOSTNAME:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}" }
+    }
+  }
+}
 
-# Увеличение значения счетчика на 5 единиц
-127.0.0.1:6379> INCRBY key5 5
-(integer) 10
-
-# Проверка итогового значения
-127.0.0.1:6379> GET key5
-"10"
+output {
+  # Логи сайта отправляем в одну папку
+  if "nginx" in [tags] {
+    elasticsearch {
+      hosts => ["https://localhost:9200"]
+      ssl => true
+      ssl_certificate_verification => false
+      user => "elastic"
+      password => "Kz4ym_Xoj8OhHhQv-Hxr"
+      index => "filebeat-nginx-%{+YYYY.MM.dd}"
+    }
+  }
+  
+  # Логи безопасности системы отправляем в другую папку
+  if "system-auth" in [tags] {
+    elasticsearch {
+      hosts => ["https://localhost:9200"]
+      ssl => true
+      ssl_certificate_verification => false
+      user => "elastic"
+      password => "Kz4ym_Xoj8OhHhQv-Hxr"
+      index => "auth-secure-logs-%{+YYYY.MM.dd}"
+    }
+  }
+}
 ```
-**Скриншот операций записи и чтения в Redis:**
-![Операции в Redis CLI](./img/4.jpg)
+
+---
+
+#### 3. Как проверяли работу счетчика
+
+После запуска Logstash открыл порт `5044`. Чтобы проверить, что система видит наши логи, специально создаем ошибку входа — в терминале переключался на пользователя, которого не существует, и ввел случайный пароль:
+
+```bash
+su неверный_пользователь
+```
+
+Система Debian зафиксировала эту ошибку, Filebeat сразу же передал её в Logstash, а тот записал в базу. 
+
+В меню **Dev Tools** в Kibana ввел команду проверки папок:
+```text
+GET _cat/indices/auth-*?v
+```
+
+База ответила, что папка успешно создана и в неё уже записалось **15 строк с системными логами**:
+```text
+health status index                       docs.count   store.size
+yellow open   auth-secure-logs-2026.05.14         15      143.4kb
+```
+
+Затем перешел в настройки Kibana (**Stack Management -> Data Views**), создал шаблон с именем `auth-secure-logs-*` и открыл вкладку **Discover**. В таблице видны системные сообщения об ошибках входа.
+
+**Скриншот интерфейса Kibana со структурированными системными логами:**
+![Сбор кастомных логов](./img/5.jpg)
 
 
 
